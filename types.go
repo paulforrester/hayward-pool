@@ -19,4 +19,7 @@ type PoolData struct {
 	LightOn        Measurement
 	HeaterOn       Measurement
 	ChlorinatorPct Measurement
+	OperatingMode  Measurement
+	Buttons        []string
+	ButtonValues   []Measurement
 }

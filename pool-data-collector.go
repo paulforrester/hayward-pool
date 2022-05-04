@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"github.com/influxdata/influxdb1-client/v2"
 	"io/ioutil"
+	"golang.org/x/net/html"
+	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -23,6 +27,112 @@ var pool PoolData
 	The heater is now wired to the controller 11/22/2019 after 8+ years.
 
 */
+
+func init() {
+    var err error
+    
+    config = ReadConfig()
+    for trycount := 0;; trycount++ {
+        pool.Buttons, err = get_button_info("http://" + config.PoolHost + "/")
+        if err == nil {
+            break
+        } else if  trycount > 10 {
+            log.Fatalln("Error fetching button info.  Can't proceed.\n")
+        }
+    }
+    fmt.Printf("buttons found:\n")
+    for idx,key := range pool.Buttons {
+        fmt.Printf("key %d: '%s'\n", idx, key)
+    }
+    pool.ButtonValues = make([]Measurement, len(pool.Buttons))
+}
+
+// Helper function to pull the href attribute from a Token
+func getTdId(t html.Token) (ok bool, id string) {
+	// Iterate over token attributes until we find an "href"
+	for _, a := range t.Attr {
+		if a.Key == "id" {
+			id = a.Val
+			ok = true
+		}
+	}
+	return
+}
+
+func get_button_info(url string) (buttons []string, err error) {
+
+    var resp *http.Response
+	var req *http.Request
+	var http_err error
+
+	client := &http.Client{Timeout: HTTP_TIMEOUT}
+	
+	req, http_err = http.NewRequest("GET", url, nil)
+	resp, http_err = client.Do(req)
+	if http_err != nil {
+		return buttons, http_err
+	}
+
+	defer resp.Body.Close()
+	parser := html.NewTokenizer(resp.Body)
+	buttonMap := make(map[int]string)
+	done := false
+	inKeyTD := false
+	keyNum := -1
+	
+	for ! done {
+		token := parser.Next()
+
+		switch {
+		case token == html.ErrorToken:
+			// End of the document, we're done
+			done = true
+		case token == html.StartTagToken:
+			tag := parser.Token()
+		    inKeyTD = false
+		    keyNum = -1
+
+			// Check if the token is an <td> tag
+			if tag.Data != "td" {
+				continue
+			}
+
+			// Extract the href value, if there is one
+			ok, tdID := getTdId(tag)
+			if !ok {
+			    // Not every TD will be for our table.
+			    // fmt.Printf("can't find id for td!\n")
+				continue
+			}
+
+            // Make sure the td ID is of the form "key_##"
+            if strings.Index(tdID, "Key_") == 0 {
+                keyNum, _ = strconv.Atoi(tdID[4:len(tdID)])
+                inKeyTD = true
+            }
+        case token == html.TextToken:
+            if inKeyTD && keyNum >= 0 {
+                element := parser.Token()
+                keyName := strings.TrimSpace(element.Data) 
+                buttonMap[keyNum] = keyName
+            }
+		default:
+            inKeyTD = false
+            keyNum = -1
+		}
+	}
+	
+    for key:=0 ; key < len(buttonMap); key++ {
+        keyName, found := buttonMap[key] 
+        if !found {
+            keyName = ""
+        }
+        buttons = append(buttons, keyName)
+    }
+    
+	return
+
+}
 
 func get_lcd_payload(url string) (payload string, err error) {
 
@@ -122,6 +232,16 @@ func update_datastore(c client.Client, config Config) {
 			pool.HeaterOn.Reading = NOT_RECORDED
 		}
 
+		if pool.OperatingMode.Last.Before(time.Now().Add(ASSUME_GONE)) {
+			pool.OperatingMode.Reading = NOT_RECORDED
+		}
+		
+		for ii := range pool.ButtonValues {
+            if pool.ButtonValues[ii].Last.Before(time.Now().Add(ASSUME_GONE)) {
+                pool.ButtonValues[ii].Reading = NOT_RECORDED
+            }
+		}
+
 		/*
 			fmt.Printf("AirTempF: %d\n", pool.AirTempF.Reading)
 			fmt.Printf("PoolTempF: %d\n", pool.PoolTempF.Reading)
@@ -133,10 +253,7 @@ func update_datastore(c client.Client, config Config) {
 			fmt.Printf("LightOn: %d\n", pool.LightOn.Reading)
 		*/
 
-		// Now deliver this data to the backend
-		// We can support thingsboard, kairosdb, and influxdb
-
-		//deliver_stats_to_kairos()
+		// Now deliver this data to the influxdb backend
 		deliver_stats_to_influxdb(c, config)
 
 	}

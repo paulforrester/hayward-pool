@@ -9,27 +9,32 @@ import (
 )
 
 const (
-	INDEX_FILTER  = 1
-	INDEX_LIGHTS  = 2
-	INDEX_HEATER  = 3
-	INDEX_CLEANER = 4
-
-	EXPECTED_INDICES = 5
-
-	STR_FILTER_OFF  = "D"
-	STR_FILTER_ON   = "E"
-	STR_LIGHTS_OFF  = "C"
-	STR_LIGHTS_ON   = "S"
-	STR_CLEANER_OFF = "C"
-	STR_CLEANER_ON  = "S"
-	STR_HEATER_ON   = "T"
-	STR_HEATER_OFF  = "D"
+    BUTTON_OFF        = 4
+    BUTTON_ON         = 5
+	MAXRPM            = 3450.0
+	MODE_OFF          = 0
+	MODE_ON           = 1 
+	MODE_POOL         = 2
+	MODE_SPA          = 3
+	MODE_SPILLOVER    = 4
 )
 
 func standardize_whitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+
+func status_update(label string, status int, datum *Measurement ) {
+    if status == BUTTON_ON {
+        status = 1
+    } else {
+        status = 0
+    }
+    
+    report_if_change(datum.Reading, status, label)
+    datum.Reading = status
+    datum.Last = time.Now()
+}
 // Figure out what data we're dealing with by matching strings
 // This isn't fun but it's all we have to work with
 
@@ -68,24 +73,23 @@ func parse_and_update(payload string) {
 		pool.SaltPPM.Last = time.Now()
 	}
 
-	re = regexp.MustCompile("^Filter Speed \\w+ (\\w+) ")
+	re = regexp.MustCompile("^Filter Speed \\w+ ([0-9A-Za-z_%]+) ")
 	if len(re.FindStringSubmatch(work_str)) == 2 {
 
 		if re.FindStringSubmatch(work_str)[1] == "Off" {
 
 			pool.FilterSpeedRPM.Reading = 0
-		} else {
+		} else if re.FindStringSubmatch(work_str)[1] == "RPM" {
 
 			pool.FilterSpeedRPM.Reading, _ = strconv.Atoi(strings.Replace(re.FindStringSubmatch(work_str)[1], "RPM", "", -1))
+		} else {
+			var speedpct int
+			speedpct, _ = strconv.Atoi(strings.Replace(re.FindStringSubmatch(work_str)[1], "%", "", -1))
+			pool.FilterSpeedRPM.Reading = int(float64(speedpct)/100 * MAXRPM)
 		}
 
 		pool.FilterSpeedRPM.Last = time.Now()
 	}
-
-	// Filter: ON gives us additionally:
-	// Pool temp
-	// Pool Chlorinator
-	// The heater will turn on automatically if its temp is below pool temp (and not OFF)
 
 	re = regexp.MustCompile("^Pool Chlorinator \\w+ (\\d+)%")
 	if len(re.FindStringSubmatch(work_str)) == 2 {
@@ -101,77 +105,67 @@ func parse_and_update(payload string) {
 		pool.PoolTempF.Last = time.Now()
 	}
 
-	// AUX2:ON ("cleaner") doesn't give us any fields that Filter:ON doesn't
-
-	// Status table:
-	// filter:on aux2:on lights:off heater:on	| xxxTECT4S333333xxx
-	// filter:on aux2:on lights:off	heater:off	| xxxTECD4S333333xxx
-	// filter:on aux2:on lights:on				| xxxTESD4S333333xxx
-	// filter:on aux2:off lights:on				| xxxTESD4C333333xxx
-	// filter:off aux2:off lights:on			| xxxTDSD4C333333xxx
-	// filter:off aux2:off lights:off			| xxxTDCD4C333333xxx
-
-	// TD..4.=filter-off, TE..4.=filter-on
-	// T.C.4.=lights-off, T.S.4.=lights-on
-	// T...4C=cleaner-off, T...4S=cleaner-on
-
-	re = regexp.MustCompile("xxxT(.)(.)([DT])4(.)......xxx")
-	if len(re.FindStringSubmatch(work_str)) == EXPECTED_INDICES {
-
-		switch re.FindStringSubmatch(work_str)[INDEX_FILTER] {
-
-		case STR_FILTER_OFF:
-			report_if_change(pool.FilterOn.Reading, 0, "Filter")
-			pool.FilterOn.Reading = 0
-			pool.FilterOn.Last = time.Now()
-		case STR_FILTER_ON:
-			report_if_change(pool.FilterOn.Reading, 1, "Filter")
-			pool.FilterOn.Reading = 1
-			pool.FilterOn.Last = time.Now()
-		}
-
-		switch re.FindStringSubmatch(work_str)[INDEX_LIGHTS] {
-
-		case STR_LIGHTS_OFF:
-			report_if_change(pool.LightOn.Reading, 0, "Lights")
-			pool.LightOn.Reading = 0
-			pool.LightOn.Last = time.Now()
-		case STR_LIGHTS_ON:
-			report_if_change(pool.LightOn.Reading, 1, "Lights")
-			pool.LightOn.Reading = 1
-			pool.LightOn.Last = time.Now()
-		}
-
-		switch re.FindStringSubmatch(work_str)[INDEX_CLEANER] {
-
-		case STR_CLEANER_OFF:
-			report_if_change(pool.CleanerOn.Reading, 0, "Cleaner")
-			pool.CleanerOn.Reading = 0
-			pool.CleanerOn.Last = time.Now()
-		case STR_CLEANER_ON:
-			report_if_change(pool.CleanerOn.Reading, 1, "Cleaner")
-			pool.CleanerOn.Reading = 1
-			pool.CleanerOn.Last = time.Now()
-		}
-
-		switch re.FindStringSubmatch(work_str)[INDEX_HEATER] {
-
-		case STR_HEATER_OFF:
-			report_if_change(pool.HeaterOn.Reading, 0, "Heater")
-			pool.HeaterOn.Reading = 0
-			pool.HeaterOn.Last = time.Now()
-		case STR_HEATER_ON:
-			report_if_change(pool.HeaterOn.Reading, 1, "Heater")
-			pool.HeaterOn.Reading = 1
-			pool.HeaterOn.Last = time.Now()
-		}
+    // get the button statuses.
+    
+    
+	re = regexp.MustCompile(".*xxx.*xxx(.{12})xxx")
+	statuses := []byte(re.FindStringSubmatch(work_str)[1])
+	fmt.Printf("statuses: %s\n", statuses)
+	var buttonstats []int
+	for _, stat := range statuses {
+		buttonstats = append(buttonstats, (int(stat)&0xF0)>>4)
+		buttonstats = append(buttonstats, int(stat)&0x0F)
 	}
+	poolMode := MODE_OFF
+	heater := BUTTON_OFF
+	for ii, stat := range buttonstats {
+		//fmt.Printf("buttons %02d: %d\n", ii, stat)
+		
+		if stat != BUTTON_OFF && stat != BUTTON_ON {
+		    // Not a valid status.  Skip it.
+		    continue
+		}
+		
+		// Handle for backwards compatibility.
+		if strings.Contains(pool.Buttons[ii], "FILTER")  {
+            status_update("Filter", stat, &pool.FilterOn )
+            poolMode = MODE_ON
+        } else if strings.Contains(pool.Buttons[ii], "LIGHTS") {
+            status_update("Lights", stat, &pool.LightOn )
+        } else if strings.Contains(pool.Buttons[ii], "CLEANER") {
+            status_update("Cleaner", stat, &pool.CleanerOn )
+        } else if strings.Contains(pool.Buttons[ii], "HEATER") || pool.Buttons[ii] == "SOLAR VALVE"{
+            if stat == BUTTON_ON {
+                heater = BUTTON_ON
+            }
+        } else if pool.Buttons[ii] == "POOL" {
+            poolMode = MODE_POOL
+        } else if pool.Buttons[ii] == "SPA" {
+            poolMode = MODE_SPA
+        } else if pool.Buttons[ii] == "SPILLOVER" {
+            poolMode = MODE_SPILLOVER
+        }
+        
+        // Save the native button statuses for the button.
+        
+        status_update(pool.Buttons[ii], stat, &(pool.ButtonValues[ii]))
+
+    }
+    
+    // Update the state of the heater
+    status_update("Heater", heater, &pool.HeaterOn )
+
+    // Set the pool mode to one of 'OFF', 'POOL', 'SPA', or 'FOUNTAIN'
+    // This might need to be flagged to execute based on a config setting.
+    report_if_change(pool.OperatingMode.Reading, poolMode, "Operating Mode")
+    pool.OperatingMode.Reading = poolMode
+    pool.OperatingMode.Last = time.Now()
+    
 }
 
 func report_if_change(old, new int, var_name string) {
 
 	if old != new {
-
 		t := time.Now()
 
 		switch new {
@@ -179,6 +173,12 @@ func report_if_change(old, new int, var_name string) {
 			fmt.Printf("%s OFF at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
 		case 1:
 			fmt.Printf("%s ON at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
+		case MODE_POOL:
+			fmt.Printf("%s POOL at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
+		case MODE_SPA:
+			fmt.Printf("%s POOL at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
+		case MODE_SPILLOVER:
+			fmt.Printf("%s POOL at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
 		}
 	}
 }

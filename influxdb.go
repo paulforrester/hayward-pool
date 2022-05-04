@@ -22,6 +22,20 @@ func influxDBClient(config Config) client.Client {
 	return c
 }
 
+func influx_post_one_metric(bp client.BatchPoints, key string, tags map[string]string, field_label string , eventTime time.Time, m *Measurement) {
+	fields := map[string]interface{}{
+	    field_label: m.Reading,
+	}
+	
+	point, err := client.NewPoint(key, tags, fields, eventTime)
+	if err != nil {
+		log.Fatalln("Error: ", err)
+	}
+	if m.Reading != NOT_RECORDED {
+		bp.AddPoint(point)
+	}
+}
+
 func influx_push_metrics(c client.Client, config Config) {
 	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  config.DatabaseDatabase,
@@ -46,105 +60,26 @@ func influx_push_metrics(c client.Client, config Config) {
 
 	key := "pool"
 	tags := map[string]string{}
-	fields := map[string]interface{}{
-		"air_temp": pool.AirTempF.Reading,
+	
+	influx_post_one_metric(bp, key, tags, "air_temp", eventTime, &pool.AirTempF)
+	influx_post_one_metric(bp, key, tags, "pool_temp", eventTime, &pool.PoolTempF)
+	influx_post_one_metric(bp, key, tags, "filter_speed", eventTime, &pool.FilterSpeedRPM)
+	influx_post_one_metric(bp, key, tags, "salt_ppm", eventTime, &pool.SaltPPM)
+	influx_post_one_metric(bp, key, tags, "filter_on", eventTime, &pool.FilterOn)
+	influx_post_one_metric(bp, key, tags, "cleaner_on", eventTime, &pool.CleanerOn)
+	influx_post_one_metric(bp, key, tags, "lights_on", eventTime, &pool.LightOn)
+	influx_post_one_metric(bp, key, tags, "chlorinator_percent", eventTime, &pool.ChlorinatorPct)
+	influx_post_one_metric(bp, key, tags, "heater_on", eventTime, &pool.HeaterOn)
+	influx_post_one_metric(bp, key, tags, "pool_mode", eventTime, &pool.OperatingMode)
+	
+	// Write out the button states, too.
+	for ii, label := range pool.Buttons {
+        if label == "" {
+            // Don't write metrics for empty buttons
+            continue
+        }
+        influx_post_one_metric(bp, key, tags, "button_" + label, eventTime, &pool.ButtonValues[ii])
 	}
-
-	point, err := client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	if pool.AirTempF.Reading != NOT_RECORDED {
-		bp.AddPoint(point)
-	}
-
-	fields = map[string]interface{}{
-		"pool_temp": pool.PoolTempF.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	if pool.PoolTempF.Reading != NOT_RECORDED {
-		bp.AddPoint(point)
-	}
-
-	fields = map[string]interface{}{
-		"filter_speed": pool.FilterSpeedRPM.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	if pool.FilterSpeedRPM.Reading != NOT_RECORDED {
-		bp.AddPoint(point)
-	}
-
-	fields = map[string]interface{}{
-		"salt_ppm": pool.SaltPPM.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	if pool.SaltPPM.Reading != NOT_RECORDED {
-		bp.AddPoint(point)
-	}
-
-	fields = map[string]interface{}{
-		"filter_on": pool.FilterOn.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	bp.AddPoint(point)
-
-	fields = map[string]interface{}{
-		"cleaner_on": pool.CleanerOn.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	bp.AddPoint(point)
-
-	fields = map[string]interface{}{
-		"lights_on": pool.LightOn.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	bp.AddPoint(point)
-
-	fields = map[string]interface{}{
-		"chlorinator_percent": pool.ChlorinatorPct.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	if pool.ChlorinatorPct.Reading != NOT_RECORDED {
-		bp.AddPoint(point)
-	}
-
-	fields = map[string]interface{}{
-		"heater_on": pool.HeaterOn.Reading,
-	}
-
-	point, err = client.NewPoint(key, tags, fields, eventTime)
-	if err != nil {
-		log.Fatalln("Error: ", err)
-	}
-	bp.AddPoint(point)
 
 	err = c.Write(bp)
 	if err != nil {
