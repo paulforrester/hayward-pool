@@ -119,7 +119,7 @@ func parse_and_update(payload string) {
 	poolMode := MODE_OFF
 	heater := BUTTON_OFF
 	for ii, stat := range buttonstats {
-		//fmt.Printf("buttons %02d: %d\n", ii, stat)
+		fmt.Printf("buttons %02d: %d\n", ii, stat)
 		
 		if stat != BUTTON_OFF && stat != BUTTON_ON {
 		    // Not a valid status.  Skip it.
@@ -129,7 +129,9 @@ func parse_and_update(payload string) {
 		// Handle for backwards compatibility.
 		if strings.Contains(pool.Buttons[ii], "FILTER")  {
             status_update("Filter", stat, &pool.FilterOn )
-            poolMode = MODE_ON
+            if poolMode == MODE_OFF && stat == BUTTON_ON{
+                poolMode = MODE_ON
+            }
         } else if strings.Contains(pool.Buttons[ii], "LIGHTS") {
             status_update("Lights", stat, &pool.LightOn )
         } else if strings.Contains(pool.Buttons[ii], "CLEANER") {
@@ -138,11 +140,11 @@ func parse_and_update(payload string) {
             if stat == BUTTON_ON {
                 heater = BUTTON_ON
             }
-        } else if pool.Buttons[ii] == "POOL" {
+        } else if pool.Buttons[ii] == "POOL" && stat == BUTTON_ON {
             poolMode = MODE_POOL
-        } else if pool.Buttons[ii] == "SPA" {
+        } else if pool.Buttons[ii] == "SPA" && stat == BUTTON_ON {
             poolMode = MODE_SPA
-        } else if pool.Buttons[ii] == "SPILLOVER" {
+        } else if pool.Buttons[ii] == "SPILLOVER" && stat == BUTTON_ON {
             poolMode = MODE_SPILLOVER
         }
         
@@ -169,9 +171,9 @@ func report_if_change(old, new int, var_name string) {
 		t := time.Now()
 
 		switch new {
-		case 0:
+		case MODE_OFF:
 			fmt.Printf("%s OFF at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
-		case 1:
+		case MODE_ON:
 			fmt.Printf("%s ON at %s\n", var_name, t.Format("2006-01-02 15:04:05"))
 		case MODE_POOL:
 			fmt.Printf("%s POOL at %s\n", var_name, t.Format("2006-01-02 15:04:05"))

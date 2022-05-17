@@ -17,7 +17,7 @@ const (
 	ENDPOINT_PAUSE = time.Second * 2
 	HTTP_TIMEOUT   = time.Second * 30
 	DATA_UPDATE    = time.Minute * 1
-	NOT_RECORDED   = 0
+	NOT_RECORDED   = -1
 	version        = "0.1"
 )
 
@@ -242,7 +242,7 @@ func update_datastore(c client.Client, config Config) {
             }
 		}
 
-		/*
+		
 			fmt.Printf("AirTempF: %d\n", pool.AirTempF.Reading)
 			fmt.Printf("PoolTempF: %d\n", pool.PoolTempF.Reading)
 			fmt.Printf("FilterSpeedRPM: %d\n", pool.FilterSpeedRPM.Reading)
@@ -251,7 +251,11 @@ func update_datastore(c client.Client, config Config) {
 			fmt.Printf("FilterOn: %d\n", pool.FilterOn.Reading)
 			fmt.Printf("CleanerOn: %d\n", pool.CleanerOn.Reading)
 			fmt.Printf("LightOn: %d\n", pool.LightOn.Reading)
-		*/
+			fmt.Printf("HeaterOn: %d\n", pool.HeaterOn.Reading)
+			fmt.Printf("OperatingMode: %d\n", pool.OperatingMode.Reading)
+			for ii := range pool.Buttons {
+			    fmt.Printf("%s: %d\n", pool.Buttons[ii], pool.ButtonValues[ii].Reading)
+			}
 
 		// Now deliver this data to the influxdb backend
 		deliver_stats_to_influxdb(c, config)
