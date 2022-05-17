@@ -110,7 +110,7 @@ func parse_and_update(payload string) {
     
 	re = regexp.MustCompile(".*xxx.*xxx(.{12})xxx")
 	statuses := []byte(re.FindStringSubmatch(work_str)[1])
-	fmt.Printf("statuses: %s\n", statuses)
+	//fmt.Printf("statuses: %s\n", statuses)
 	var buttonstats []int
 	for _, stat := range statuses {
 		buttonstats = append(buttonstats, (int(stat)&0xF0)>>4)
@@ -119,7 +119,7 @@ func parse_and_update(payload string) {
 	poolMode := MODE_OFF
 	heater := BUTTON_OFF
 	for ii, stat := range buttonstats {
-		fmt.Printf("buttons %02d: %d\n", ii, stat)
+		//fmt.Printf("buttons %02d: %d\n", ii, stat)
 		
 		if stat != BUTTON_OFF && stat != BUTTON_ON {
 		    // Not a valid status.  Skip it.
