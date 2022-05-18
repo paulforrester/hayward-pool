@@ -79,6 +79,9 @@ func influx_push_metrics(c client.Client, config Config) {
             continue
         }
         influx_post_one_metric(bp, key, tags, "button_" + label, eventTime, &pool.ButtonValues[ii])
+        tags["name"] = label
+        influx_post_one_metric(bp, key, tags, "button_state", eventTime, &pool.ButtonValues[ii])
+        delete(tags, "name")
 	}
 
 	err = c.Write(bp)
