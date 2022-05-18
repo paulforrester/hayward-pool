@@ -159,6 +159,10 @@ func parse_and_update(payload string) {
 
     // Set the pool mode to one of 'OFF', 'POOL', 'SPA', or 'FOUNTAIN'
     // This might need to be flagged to execute based on a config setting.
+    // If the Filter isn't on then the poolmode must be OFF.
+    if pool.FilterOn.Reading == 0 {
+        poolMode = MODE_OFF
+    }
     report_if_change(pool.OperatingMode.Reading, poolMode, "Operating Mode")
     pool.OperatingMode.Reading = poolMode
     pool.OperatingMode.Last = time.Now()
